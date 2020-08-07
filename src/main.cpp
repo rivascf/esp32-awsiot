@@ -1,16 +1,25 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "secrets.h"
-#include "bmp280imp.h"
+#include <secrets.h>
+#include <bmp280imp.h>
 #include <WiFiClientSecure.h>
-#include "MQTTClient.h"
-#include "WiFi.h"
+#include <MQTTClient.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+//#include <time.h>
 
 WiFiClientSecure net = WiFiClientSecure();
 MQTTClient client = MQTTClient(256); // MQTTClient(256);
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
 
 unsigned long delayTime;
+unsigned long epoch;
 float temperature, pressure, humidity, altitude;
+String formattedDate;
+String dayStamp;
+String timeStamp;
 
 void readSensorValues(float* temperature, float* pressure, float* humidity, float* altitude) {
   *temperature = bme.readTemperature();
@@ -91,31 +100,69 @@ void connectAWS()
   Serial.println("AWS IoT Connected!");
 }
 
-void publishMessage()
+/*
+String getFormatedTimeStamp() {
+  while(!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
+  Serial.println(timeClient.getFormattedTime());
+  formattedDate = String(timeClient.getFormattedTime());
+  //timeClient.getEpochTime
+  //format in which date and time is returned 2018-04-30T16:00:13Z
+  int splitT = formattedDate.indexOf("T");
+  dayStamp = formattedDate.substring(0, splitT);
+  char timedate[50];
+  timeStamp = formattedDate.substring(splitT+1, formattedDate.length()-1);
+  sprintf(timedate, "%s %s", dayStamp.c_str(), timeStamp.c_str());
+  return "";
+}
+*/
+
+unsigned long getEpoch() {
+  while(!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
+  return timeClient.getEpochTime();
+}
+
+void publishMessage(bool consoleOnly)
 {
   StaticJsonDocument<200> doc;
+  epoch = getEpoch();
   readSensorValues(&temperature, &pressure, &humidity, &altitude);
-  doc["time"] = millis();
+  doc["timestamp"] = epoch; 
+  doc["deviceid"] = THINGNAME;
   doc["temperature"] = temperature;
   doc["pressure"] = pressure / 100.0F;
   doc["humidity"] = humidity;
   doc["altitude"] = altitude;
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer); 
-
-  client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer);
+  if (!consoleOnly) {
+    Serial.println(jsonBuffer);
+  } else {
+    client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer);
+  }
 }
 
 void messageHandler(String &topic, String &payload) {
-  Serial.println("-> incoming: " + topic + " - " + payload);
-
+  //Serial.println("-> incoming: " + topic + " - " + payload);
+  epoch = getEpoch();
   StaticJsonDocument<200> doc;
   deserializeJson(doc, payload);
   const char* message = doc["message"];
+  Serial.print("-> message: ");
+  Serial.println(message);
+  //if(strlen(message) > 0) {
+  //  Serial.print("-> message: ");
+  //  Serial.println(message);
+  //} else {
+  //  Serial.println("-> message: \"\".");
+  //}
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   unsigned status = startBMP280(true);
   if (!status) {
     Serial.println("Detenido");
@@ -123,11 +170,17 @@ void setup() {
     ;
   }
   connectAWS();
-  delayTime = 5000;
+  Serial.print("Initlizing NTPClient to get time...");
+  timeClient.begin();
+  //-21600 GMT-6 America/MexicoCity Timezone 
+  //-18000 GMT-5 America/MexicoCity Timezone - Summertime
+  timeClient.setTimeOffset(-18000); 
+  Serial.println("done!");
+  delayTime = 10000;
 }
 
 void loop() {
-  publishMessage();
+  publishMessage(false);
   client.loop();
   delay(delayTime);
 }
