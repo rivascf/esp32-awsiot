@@ -141,6 +141,8 @@ void publishMessage(bool consoleOnly)
   if (!consoleOnly) {
     Serial.println(jsonBuffer);
   } else {
+    Serial.print("publishing -> ");
+    Serial.println(jsonBuffer);
     client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer);
   }
 }
@@ -180,7 +182,7 @@ void setup() {
 }
 
 void loop() {
-  publishMessage(false);
+  publishMessage(true);
   client.loop();
   delay(delayTime);
 }
