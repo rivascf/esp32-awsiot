@@ -1,0 +1,54 @@
+import json
+import boto3
+
+def lambda_handler(event, context):
+    # TODO implement
+    priority = 'Info'
+    evaltemp = 'Normal'
+    tempGoal = 22.0
+    
+    client = boto3.client('iot-data', region_name='us-east-1')
+
+    temperature = event['temperature']
+    
+    if temperature > 45.0:
+        priority = 'Alert'
+        evaltemp = 'Muy alta'
+    elif temperature > 30.0 and temperature <= 45.0:
+        priority = 'Warning'
+        evaltemp = 'Alta'
+    elif temperature > 20.0 and temperature <= 30.0:
+        priority = 'Info'
+        evaltemp = 'Normal'
+    elif temperature > 5.0 and temperature <= 20.0:
+        priority = 'Warning'
+        evaltemp = 'Frio'
+    elif temperature <= 5.0:
+        priority = 'Alert'
+        evaltemp = 'Muy frio'
+    else:
+        priority = 'Error'
+        evaltemp = 'Bad data'
+    
+    statusCode = 200
+    message = '[Info]: iot-temp-func succeed! "[{}] {}" '.format(priority, evaltemp)
+    #print('[{}]: {}'.format(priority, evaltemp))
+    
+    return_msg = {
+        'statusCode': statusCode,
+        'message': message,
+        'priority': priority,
+        'evaltemp': evaltemp
+    }
+    
+    response = client.publish(
+        topic = 'iot/device/msg',
+        qos = 1,
+        payload = json.dumps(return_msg)
+        )
+
+
+    return {
+        'statusCode': statusCode,
+        'body': json.dumps(message)
+    }
